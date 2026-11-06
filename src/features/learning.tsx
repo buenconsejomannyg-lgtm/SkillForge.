@@ -1,0 +1,43 @@
+"use client";
+import { useState } from "react";
+import { roadmap as original } from "@/lib/data";
+import { active, newEntity, records, type Entity } from "@/lib/workspace";
+import { usePrototype } from "@/components/prototype-provider";
+import { PageHeader, WeeklyTasks } from "@/components/feature-parts";
+import { Badge, Card, ChecklistItem, ProgressBar, Tabs } from "@/components/ui";
+import { ArchiveTrash, EntityEditor, EntityManager, EntityRow, Field } from "@/components/workspace-ui";
+export function Learning() {
+    const { workspace, state, command, toggle } = usePrototype();
+    const [selected, setSelected] = useState(original.id);
+    const [phaseId, setPhase] = useState("phase-1");
+    const [notice, setNotice] = useState("");
+    const roadmaps = records(workspace, "roadmap");
+    const roadmap = roadmaps.find(r => r.id === selected) || roadmaps[0];
+    const phases = records(workspace, "phase").filter(p => p.roadmapId === roadmap?.id);
+    const phase = phases.find(p => p.id === phaseId) || phases[0];
+    const weeks = records(workspace, "week").filter(w => w.phaseId === phase?.id);
+    const allWeeks = phases.flatMap(p => records(workspace, "week").filter(w => w.phaseId === p.id));
+    const activities = records(workspace, "activity").filter(e => e.roadmapId === roadmap?.id && e.activityKind !== "task");
+    const complete = activities.filter(e => e.status === "done").length;
+    const percent = activities.length ? Math.round(complete / activities.length * 100) : 0;
+    const weekDone = (w: Entity) => { const children = activities.filter(e => e.weekId === w.id); return children.length > 0 && children.every(e => e.status === "done"); };
+    return <><PageHeader title="Learning Center" description="Structured paths. Flexible learning. Customize your next step." action={<EntityEditor kind="roadmap" onSaved={e => setSelected(e.id)}/>}/>
+ <Tabs items={[{ id: "roadmap", title: "My Roadmap", content: <>
+ <Field label="Choose roadmap"><select value={roadmap?.id || ""} onChange={e => setSelected(e.target.value)}>{roadmaps.map(r => <option value={r.id} key={r.id}>{r.title}</option>)}</select></Field>
+ {roadmap ? <><div className="learning-top"><Card className="roadmap-summary"><Badge tone="teal">{allWeeks.length} weeks · flexible sequence</Badge><h2>{roadmap.title}</h2><p>{roadmap.description}</p><EntityEditor kind="roadmap" entity={roadmap}/><div className="roadmap-progress"><div><span>Roadmap completion</span><strong>{percent}%</strong></div><ProgressBar value={percent} label="Roadmap completion"/><small>{activities.length ? `${complete}/${activities.length} lessons and assignments complete` : "No activities"}</small></div><dl className="learning-counts"><div><dt>Weeks complete</dt><dd>{allWeeks.filter(weekDone).length}/{allWeeks.length}</dd></div><div><dt>Lessons complete</dt><dd>{activities.filter(e => e.activityKind === "lesson" && e.status === "done").length}/{activities.filter(e => e.activityKind === "lesson").length}</dd></div><div><dt>Assignments complete</dt><dd>{activities.filter(e => e.activityKind === "assignment" && e.status === "done").length}/{activities.filter(e => e.activityKind === "assignment").length}</dd></div></dl><p className="micro muted">Weeks are complete when all assigned lessons and assignments are complete. Learning activity does not establish assessed proficiency.</p></Card>
+ <Card title="Your learning phases" eyebrow="A RECOMMENDED SEQUENCE"><div className="phase-buttons" role="group" aria-label="Choose roadmap phase">{phases.map((p, i) => { const pw = allWeeks.filter(w => w.phaseId === p.id); const children = activities.filter(a => a.phaseId === p.id); return <button key={p.id} className={`phase-button ${phase?.id === p.id ? "selected" : ""}`} aria-pressed={phase?.id === p.id} onClick={() => setPhase(p.id)}><span className="phase-number">{i + 1}</span><span><small>{pw.length ? `Weeks ${allWeeks.indexOf(pw[0]) + 1}–${allWeeks.indexOf(pw[pw.length - 1]) + 1}` : "No weeks"}</small><strong>{p.title}</strong></span><span className="phase-count">{children.filter(a => a.status === "done").length}/{children.length}</span></button>; })}</div><p className="micro muted">Every phase is open. Follow the sequence or jump ahead.</p><EntityEditor kind="phase" seed={{ roadmapId: roadmap.id }} onSaved={e => setPhase(e.id)}/></Card></div>
+ {phase && <><Card title={`Phase ${phases.indexOf(phase) + 1}: ${phase.title}`}><details><summary>Manage phase</summary><EntityRow entity={phase} siblings={phases}/></details><EntityEditor kind="week" seed={{ roadmapId: roadmap.id, phaseId: phase.id }}/>{weeks.map(w => <div className="workspace-week" key={w.id}><h3>{w.title}</h3>{w.objectives && <p>{w.objectives}</p>}<details><summary>Manage week</summary><EntityRow entity={w} siblings={weeks}/></details><div className="lesson-list">{activities.filter(a => a.weekId === w.id).map(a => <div className="lesson-row" key={a.id}><ChecklistItem title={a.title} detail={`${a.activityKind} · recommended sequence`} checked={Boolean((a.activityKind === "lesson" ? state.lessonCompletion : state.taskCompletion)[a.id]?.completed)} onChange={() => { if (a.activityKind === "lesson")
+                        toggle("lessonCompletion", a.id);
+                    else
+                        void command({ type: "complete", id: a.id, completed: a.status !== "done" }).then(r => setNotice(r.message || "Saved in this browser.")); }}/><details><summary>Manage activity</summary><EntityRow entity={a} siblings={activities.filter(t => t.weekId === w.id)}/></details></div>)}</div><EntityEditor kind="activity" seed={{ activityKind: "lesson", learning: true, roadmapId: roadmap.id, phaseId: phase.id, weekId: w.id, skillIds: roadmap.skillIds }}/></div>)}<details><summary>Unscheduled phase activities</summary><EntityManager kind="activity" title="Unscheduled phase activities" filter={e => e.phaseId === phase.id && !e.weekId} seed={{ roadmapId: roadmap.id, phaseId: phase.id, activityKind: "lesson", learning: true, skillIds: roadmap.skillIds }}/></details></Card></>}
+ <details><summary>Roadmap activities without a phase</summary><EntityManager kind="activity" title="Roadmap activities without a phase" filter={e => e.roadmapId === roadmap.id && !e.phaseId} seed={{ roadmapId: roadmap.id, activityKind: "lesson", learning: true, skillIds: roadmap.skillIds }}/>
+ </details></> : <Card title="Create your first roadmap"><p>Add a roadmap or restore an archived one.</p></Card>}<WeeklyTasks /><p role="status">{notice}</p></> },
+            { id: "manage", title: "Manage roadmaps", content: <EntityManager kind="roadmap" title="Roadmaps"/> },
+            { id: "tasks", title: "Tasks", content: <EntityManager kind="activity" title="All tasks & activities"/> },
+            { id: "resources", title: "Resources & notes", content: <><EntityManager kind="resource" title="Tutorials, references & learning notes"/><p className="micro muted">Use a title and notes for a reflection, or add an HTTP/HTTPS resource link. Do not enter confidential information.</p></> },
+            { id: "templates", title: "Starter template", content: <Card title="Original 16-week Prompt Engineering template"><p>The approved template remains unchanged. New copies start incomplete without rewards.</p>{original.phases.map(p => <div key={p.id}><h3>Weeks {p.startWeek}–{p.endWeek}: {p.title}</h3>{p.lessons.map(l => <p key={l.id}>Week {l.week}: {l.title}</p>)}</div>)}<button className="button secondary" onClick={async () => { const id = crypto.randomUUID(); const entities = [newEntity("roadmap", { id, title: `${original.title} — copy`, skillIds: Object.values(workspace.entities).some(e => e.id === "prompting" && active(e)) ? ["prompting"] : [], templateVersion: 1 })]; original.phases.forEach((p, index) => { const phaseId = crypto.randomUUID(); entities.push(newEntity("phase", { id: phaseId, title: p.title, roadmapId: id, order: index })); p.lessons.forEach((l, order) => { const weekId = crypto.randomUUID(); entities.push(newEntity("week", { id: weekId, title: `Week ${l.week}`, roadmapId: id, phaseId, order: l.week }), newEntity("activity", { title: l.title, roadmapId: id, phaseId, weekId, activityKind: "lesson", skillIds: entities[0].skillIds, order, learning: true })); }); }); const result = await command({ type: "create-many", entities }); if (result.status !== "saved") {
+                    setNotice(result.message || "Copy was not saved.");
+                    return;
+                } setSelected(id); setNotice("New incomplete template copy created."); }}>Create fresh template copy</button><p role="status">{notice}</p></Card> },
+            { id: "archive", title: "Archive & trash", content: <ArchiveTrash /> }]}/></>;
+}
